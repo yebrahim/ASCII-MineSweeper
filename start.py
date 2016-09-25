@@ -29,66 +29,101 @@ num_bombs = board_width * board_height * difficulty
 data = []
 
 current_row = current_col = 0
+neighbors = [[0,1], [0,-1], [1,0], [-1,0], [-1,-1], [1,1], [1,-1], [-1,1]]
+
+def validate_boundaries(row, col):
+    if row < 0 or row >= board_height or col < 0 or col >= board_width:
+        return False
+    return True
+
+class cell(object):
+    def __init__(self, color, bomb_count):
+        self.color, self.bomb_count = color, bomb_count
 
 def count_surrounding_bombs(row, col):
-    neighbors = [[0,1], [0,-1], [1,0], [-1,0], [-1,-1], [1,1], [1,-1], [-1,1]]
     count = 0
     for n in neighbors:
         r,c = row+n[0], col+n[1]
         allbombs = True
-        if r < 0 or r >= board_height or c < 0 or c >= board_width:
+        if not validate_boundaries(r, c):
             continue
-        if data[r][c] == color_hidden_bomb:
+        if data[r][c].bomb_count == -1:
             count += 1
         else:
             allbombs = False
         return (count, allbombs)
 
+def declare_bomb(row, col):
+    for n in neighbors:
+        r,c = row+n[0], col+n[1]
+        if not validate_boundaries(r, c) or data[r][c].bomb_count == -1:
+            continue
+        data[r][c].bomb_count += 1
+
 def init_data():
     global data, num_bombs
 
+    # build 2D matrix
     for i in range(board_height):
-        data.append(board_width*[color_closed])
+        row = []
+        for j in range(board_width):
+            row.append(cell(color_closed, 0))
+        data.append(row)
+    # add bombs
     while num_bombs:
         brow, bcol = random.randrange(0, board_height), random.randrange(0, board_width)
         if data[brow][bcol] == color_hidden_bomb or count_surrounding_bombs(brow, bcol)[1]:
             continue
-        data[brow][bcol] = color_hidden_bomb
+        data[brow][bcol].bomb_count = -1
         num_bombs -= 1
+        declare_bomb(brow, bcol)
 
 def setCell(row, col, val, state=curses.A_DIM):
+    if val == color_flag:
+        state = curses.A_REVERSE
     stdscr.addch(board_top + row, board_left + col*2, color_separator, curses.A_DIM)
     stdscr.addch(board_top + row, board_left + col*2 + 1, val, state)
 
 def moveCurrentCell(newrow, newcol):
     global current_row, current_col
-    if newrow < 0 or newrow >= board_height or newcol < 0 or newcol >= board_width:
+    if not validate_boundaries(newrow, newcol):
         return
-    val = data[current_row][current_col]
-    newval = data[newrow][newcol]
+    val = data[current_row][current_col].color
+    newval = data[newrow][newcol].color
     if val == color_hidden_bomb: val = color_closed
     if newval == color_hidden_bomb: newval = color_closed
-    stdscr.addch(board_top + current_row, board_left + current_col*2 + 1, val)
+    setCell(current_row, current_col, val)
     stdscr.addch(board_top + newrow, board_left + newcol*2 + 1, newval, curses.A_BLINK)
     current_row, current_col = newrow, newcol
+
+def reveal_cell(row, col):
+    d = data[row][col].bomb_count + ord('0')
+    if d == ord('0'):
+        d = color_empty
+    setCell(row, col, d)
+    data[row][col].color = d
+    if d == color_empty:
+        for n in neighbors:
+            r,c = row + n[0], col + n[1]
+            if not validate_boundaries(r, c):
+                continue
+            if data[r][c].color == color_closed:
+                reveal_cell(r, c)
+
+def game_over(hasWon):
+    if not hasWon:
+        for r in range(board_height):
+            for c in range(board_width):
+                if data[r][c].bomb_count == -1:
+                    setCell(r, c, color_bomb, curses.A_REVERSE)
 
 def main(stdscr):
     stdscr.clear()
     init_data()
     for i in range(board_height):
         for j in range(board_width):
-            setCell(i, j, color_closed)
+            setCell(i, j, data[i][j].color)
         stdscr.addch(i, board_left + board_width*2, color_separator, curses.A_DIM)
-
-    # setCell(5,5,color_flag)
-    # setCell(2,5,color_empty)
-    # setCell(2,6,color_empty)
-    # setCell(3,5,color_empty)
-    # setCell(3,6,color_empty)
-    # setCell(3,7,color_empty)
-    # setCell(9,7,color_bomb)
-    # setCell(1,5,'3')
-    # stdscr.addch(board_top + 8, board_left + 8*2 + 1, '8', curses.A_BLINK)
 
     moveCurrentCell(0, 0)
     stdscr.refresh()
@@ -104,11 +139,15 @@ def main(stdscr):
         elif c == curses.KEY_DOWN:
             newrow, newcol = current_row + 1, current_col
         elif c == ord('f') or c == ord('F'):
-            if data[current_row][current_col] not in [color_closed, color_hidden_bomb, color_flag]:
-                continue
-            newcolor = color_flag if data[current_row][current_col] != color_flag else color_closed
-            data[current_row][current_col] = newcolor
-            setCell(current_row, current_col, newcolor, curses.A_BLINK)
+            if data[current_row][current_col].color in [color_closed, color_hidden_bomb, color_flag]:
+                newcolor = color_flag if data[current_row][current_col].color != color_flag else color_closed
+                data[current_row][current_col].color = newcolor
+                setCell(current_row, current_col, newcolor, curses.A_BLINK)
+        elif c == ord(' ') or c == curses.KEY_ENTER:
+            if data[current_row][current_col].bomb_count == -1:
+                game_over(False)
+            else:
+                reveal_cell(current_row, current_col)
         elif c == ord('q') or c == ord('Q'):
             break
         moveCurrentCell(newrow, newcol)
