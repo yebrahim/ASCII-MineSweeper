@@ -1,5 +1,5 @@
 # ascii-minesweeper
-MineSweeper written for console
+MineSweeper written in python for console.
 
 ## Run
 python start.py
